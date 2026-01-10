@@ -57,47 +57,36 @@ class Participant(SQLModel, table=True):
 
     # Personal / Contact
     full_name: str = Field(index=True)
-    email: str = Field(unique=True, index=True)  # <--- Added Unique
-    telegram: Optional[str] = None
+    email: str = Field(unique=True)
+    telegram: str = Field(unique=True)
     phone: str
-    study_year: Optional[int] = Field(default=None)
+    study_year: int
 
     # University Reference
-    university_id: Optional[int] = Field(default=None, foreign_key="universities.id")
-    university: Optional[University] = Relationship(back_populates="participants")
+    university_id: int = Field(foreign_key="universities.id")
+    university: University = Relationship(back_populates="participants")
 
     # Hackathon Logic
-    # Removed "category_id" orphan.
-    # Usually, a participant chooses a category, OR their team determines the category.
-    # If a solo participant needs a category, keep a string field here.
-    preferred_category_id: Optional[int] = Field(
-        default=None, foreign_key="categories.id"
-    )
+    category_id: int = Field(foreign_key="categories.id")
+    participation_format: ParticipationFormat
 
-    participation_format: ParticipationFormat  # Uses the Enum defined above
-
-    # Team Logic
-    # Removed "has_team" (Check if team_id is not None)
-    # Removed "team_name" string (Get it from self.team.team_name)
     team_leader: bool = Field(default=False)
-
     team_id: Optional[int] = Field(default=None, foreign_key="teams.id")
     team: Optional[Team] = Relationship(back_populates="members")
 
     # Work / Career
-    wants_job: bool = Field(default=False)
-    job_description: Optional[str] = None  # Or "Position/Role"
-    cv_url: Optional[str] = None  # Clarified name
+    wants_job: bool
+    job_description: Optional[str] = None  
+    cv_url: Optional[str] = None
     linkedin: Optional[str] = None
-    work_consent: bool = Field(default=False)
+    work_consent: bool
 
     # Meta
-    source: Optional[str] = None
+    source: str
     comment: Optional[str] = None
 
     # Legal
-    personal_data_consent: bool = Field(default=False)
-    photo_consent: bool = Field(default=False)
+    personal_data_consent: bool
 
     # Skills
     skills_text: Optional[str] = None

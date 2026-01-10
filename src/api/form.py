@@ -7,93 +7,112 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.core import get_session
-from db.models import Participant, Team
+from db.models import Participant, Team, University, Category
 
 router = APIRouter()
 
 
 @router.post("/form/")
 async def submit_form(form: Form, session: AsyncSession = Depends(get_session)):
-    # map domain form fields to DB participant fields (new schema)
+    # 1. Validate constraints (Email & Telegram)
+    # Check if user already exists
+    stmt_check_user = select(Participant).where(
+        (Participant.email == form.email) | (Participant.telegram == form.telegram)
+    )
+    result_user = await session.execute(stmt_check_user)
+    existing_user = result_user.scalars().first()
+
+    if existing_user:
+        if existing_user.email == form.email:
+            raise HTTPException(
+                status_code=400, detail="Користувач з таким email вже зареєстрований"
+            )
+        if existing_user.telegram == form.telegram:
+            raise HTTPException(
+                status_code=400, detail="Користувач з таким telegram вже зареєстрований"
+            )
+
+    # 2. Validate Foreign Keys (University & Category)
+    # These checks ensure we don't get generic 500 errors for bad IDs
+    university = await session.get(University, form.university_id)
+    if not university:
+        raise HTTPException(status_code=400, detail="Вказаний університет не знайдено")
+
+    category = await session.get(Category, form.category_id)
+    if not category:
+        raise HTTPException(status_code=400, detail="Вказана категорія не знайдена")
+
+    # 3. Prepare Participant
     participant = Participant(
         full_name=form.full_name,
         email=form.email,
-        telegram=getattr(form, "telegram", None),
+        telegram=form.telegram,
+        study_year=form.study_year,
         phone=form.phone,
-        university_id=getattr(form, "university_id", None),
-        category_id=(
-            str(form.category_id)
-            if getattr(form, "category_id", None) is not None
-            else None
-        ),
+        university_id=form.university_id,
+        category_id=form.category_id,
         participation_format=form.format,  # type: ignore
-        team_leader=bool(form.team_leader),
-        wants_job=bool(form.wants_job),
-        job_description=getattr(form, "job_description", None),
-        cv_url=getattr(form, "cv", None),
-        linkedin=getattr(form, "linkedin", None),
-        work_consent=bool(form.work_consent),
-        source=(form.source or getattr(form, "otherSource", None)),
-        comment=getattr(form, "comment", None),
-        personal_data_consent=bool(getattr(form, "personal_data_consent", False)),
+        team_leader=form.team_leader,
+        wants_job=form.wants_job,
+        job_description=form.job_description,
+        cv_url=form.cv,
+        linkedin=form.linkedin,
+        work_consent=form.work_consent,
+        source=(form.source or form.otherSource),
+        comment=form.comment,
+        personal_data_consent=form.personal_data_consent,
         skills_text=",".join(form.skills) if form.skills else "",
     )
 
+    success_message = "Form submitted successfully"
+
+    # 4. Handle Team Logic
+    if form.has_team:
+        team_name = form.team_name
+        if not team_name:
+            raise HTTPException(status_code=400, detail="Ви повинні вказати назву команди")
+
+        # Check existing team
+        stmt_team = select(Team).where(Team.team_name == team_name)
+        result_team = await session.execute(stmt_team)
+        existing_team = result_team.scalars().first()
+
+        if existing_team:
+            if existing_team.category_id != form.category_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Присутня команда з такою назвою в іншій категорії. Пересвідчіться, що ви правильно вказали назву команди. Якщо Ви переконані, що хочете створити команду, то це має зробити тімлід"
+                )
+            
+            # Join existing
+            participant.team_id = existing_team.id
+            participant.team_leader = False  # Force false if joining
+            success_message = "Ви успішно приєдналися до команди"
+        
+        else:
+            # Create new team
+            if not form.team_leader:
+                raise HTTPException(
+                    status_code=400, detail="Команду має створювати тімлід"
+                )
+
+            new_team = Team(team_name=team_name, category_id=form.category_id)
+            session.add(new_team)
+            # We let SQLAlchemy resolve the relationship ID upon commit/flush
+            participant.team = new_team
+            success_message = "Ви успішно створили команду"
+
+    session.add(participant)
     
-    # if user has no team, just create participant
-    if not form.has_team:
-        session.add(participant)
-        await session.commit()
-        return {"message": "Form submitted successfully", "data": form.dict()}
-
-    # user indicates they have a team -> team_name and team_leader should be present
-    team_name = form.team_name
-    if not team_name:
-        raise HTTPException(status_code=400, detail="Team name must be provided")
-
-    category = (
-        str(form.category_id) if getattr(form, "category_id", None) is not None else ""
-    )
-
-    # try to find existing team
-    result = await session.execute(
-        select(Team).where(Team.team_name == team_name, Team.category_id == category)
-    )
-    existing = result.scalars().first()
-
-    if existing:
-        participant.team_id = existing.id
-        session.add(participant)
-        await session.commit()
-        return {"message": "Joined existing team", "data": form.model_dump()}
-
-    # If no existing team, only a team leader can create a new one
-    if not form.team_leader:
-        raise HTTPException(
-            status_code=400, detail="Only a team lead can create a new team"
-        )
-
-    new_team = Team(team_name=team_name, category=category)
-    session.add(new_team)
+    # 5. Commit
+    # Since we pre-validated everything, a failure here is likely a rare race condition.
     try:
         await session.commit()
     except IntegrityError:
-        # race: another request created the team concurrently -> fetch it
         await session.rollback()
-        result = await session.execute(
-            select(Team).where(Team.team_name == team_name, Team.category_id == category)
+        raise HTTPException(
+            status_code=400, 
+            detail="Помилка збереження даних. Можливо, команда або користувач були створені одночасно з іншим запитом. Будь ласка, спробуйте ще раз."
         )
-        existing = result.scalars().first()
-        if existing is None:
-            raise HTTPException(status_code=500, detail="Failed to create or find team")
-        participant.team_id = existing.id
-        session.add(participant)
-        await session.commit()
-        return {"message": "Joined existing team", "data": form.model_dump()}
 
-    # success: associate participant with freshly created team
-    await session.refresh(new_team)
-    participant.team_id = new_team.id
-    session.add(participant)
-    await session.commit()
-    return {"message": "Team created and participant added", "data": form.model_dump()}
+    return {"message": success_message, "data": form.model_dump()}

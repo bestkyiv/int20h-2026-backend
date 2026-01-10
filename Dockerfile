@@ -14,11 +14,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # copy application code
 COPY . /app
 
-# create uploads dir and ensure writable
-RUN mkdir -p /app/uploads && chown -R www-data:www-data /app/uploads || true
-
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENV PYTHONPATH=/app/src
+
+# Copy start script and make it executable
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+
+CMD ["/app/start.sh"]

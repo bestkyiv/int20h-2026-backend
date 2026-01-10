@@ -51,7 +51,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 settings = Settings()
-origins = json.loads(settings.ALLOWED_ORIGINS)
+origins = [
+    origin.strip()
+    for origin in settings.ALLOWED_ORIGINS.split(",")
+    if origin.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,

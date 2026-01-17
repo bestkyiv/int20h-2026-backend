@@ -59,7 +59,9 @@ app = FastAPI(lifespan=lifespan)
 
 settings = Settings()
 origins = [
-    origin.strip() for origin in settings.ALLOWED_ORIGINS.split(",") if origin.strip()
+    origin.strip().rstrip("/")
+    for origin in settings.ALLOWED_ORIGINS.split(",")
+    if origin.strip()
 ]
 
 app.add_middleware(

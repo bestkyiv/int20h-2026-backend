@@ -78,6 +78,7 @@ async def submit_form(form: Form, session: AsyncSession = Depends(get_session)):
         work_consent=form.work_consent,
         source=(str(form.otherSource) if form.source == "otherSocial" else form.source),
         comment=form.comment,
+        is_student=form.is_student,
         personal_data_consent=form.personal_data_consent,
         skills_text=",".join(form.skills) if form.skills else "",
     )

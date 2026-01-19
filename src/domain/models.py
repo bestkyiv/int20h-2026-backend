@@ -90,14 +90,20 @@ class Form(BaseModel):
         Field(description="The phone number of the user", max_length=100),
     ]
 
-    university_id: Annotated[int, Field(description="The ID of the user's university")]
+    is_student: Annotated[
+        bool, Field(description="Whether the user is a student or not")
+    ]
 
-    category_id: Annotated[
-        int, Field(description="The category of interest for the user")
+    university_id: Annotated[
+        int | None, Field(description="The ID of the user's university")
     ]
 
     study_year: Annotated[
-        StudyYear, Field(description="The current year of study of the user")
+        StudyYear | None, Field(description="The current year of study of the user")
+    ]
+
+    category_id: Annotated[
+        int, Field(description="The category of interest for the user")
     ]
 
     skills: Annotated[

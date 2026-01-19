@@ -60,11 +60,13 @@ class Participant(SQLModel, table=True):
     email: str = Field(unique=True)
     telegram: str = Field(unique=True)
     phone: str
-    study_year: int
+
+    is_student: bool
+    study_year: Optional[int] = None
 
     # University Reference
-    university_id: int = Field(foreign_key="universities.id")
-    university: University = Relationship(back_populates="participants")
+    university_id: Optional[int] = Field(foreign_key="universities.id", default=None)
+    university: Optional[University] = Relationship(back_populates="participants")
 
     # Hackathon Logic
     category_id: int = Field(foreign_key="categories.id")
@@ -76,7 +78,7 @@ class Participant(SQLModel, table=True):
 
     # Work / Career
     wants_job: bool
-    job_description: Optional[str] = None  
+    job_description: Optional[str] = None
     cv_url: Optional[str] = None
     linkedin: Optional[str] = None
     work_consent: bool

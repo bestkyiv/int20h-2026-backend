@@ -1,0 +1,94 @@
+version: "3.8"
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Explicitly mapping env vars prevents accidental leakage of the whole host env
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      # REMOVED: ./docker/seed mount. We do not want Postgres to auto-seed on init.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - backend_network
+
+  migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Override the default command to run migrations
+    command: alembic upgrade head
+    restart: "no" # Do not restart on exit; run once and stop
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+    networks:
+      - backend_network
+    volumes:
+      - .:/app
+
+  seeder:
+    image: alpine:3.19
+    # Install postgresql-client to get psql
+    command: >
+      sh -c "apk add --no-cache postgresql-client &&
+             PGPASSWORD=$${POSTGRES_PASSWORD} psql -h db -U $${POSTGRES_USER} -d $${POSTGRES_DB} -f /seed/seed.sql"
+    restart: "no" # Run once and stop
+    volumes:
+      # Mount your specific SQL seed file or folder here
+      - ./docker/seed/seed_anonymized.sql:/seed/seed.sql:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    env_file: .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    networks:
+      - backend_network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+      seeder:
+        condition: service_completed_successfully
+    env_file: .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - BACKEND_HOST=${BACKEND_HOST:-0.0.0.0}
+      - BACKEND_PORT=${BACKEND_PORT:-8000}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    networks:
+      - backend_network
+
+volumes:
+  db_data:
+
+networks:
+  backend_network:
+    driver: bridge

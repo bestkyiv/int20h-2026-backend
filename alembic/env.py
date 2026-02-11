@@ -10,6 +10,9 @@ from alembic import context
 from src.config import Settings
 from sqlmodel import SQLModel
 from src.db.models import *
+from dotenv import load_dotenv
+
+load_dotenv()
 
 settings = Settings()
 

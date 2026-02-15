@@ -2,11 +2,10 @@ from enum import Enum, IntEnum
 from pydantic import (
     AfterValidator,
     BaseModel,
+    EmailStr,
     Field,
     ConfigDict,
-    field_validator,
     model_validator,
-    ValidationError,
 )
 from typing import Annotated, Literal
 import phonenumbers
@@ -69,7 +68,7 @@ class Form(BaseModel):
     ]
 
     email: Annotated[
-        str,
+        EmailStr,
         Field(
             description="The email address of the user",
             max_length=100,

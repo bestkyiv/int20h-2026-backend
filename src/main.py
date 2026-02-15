@@ -1,25 +1,22 @@
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-
-load_dotenv()
-
-import json
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import Settings
-from db.core import make_engine, make_session_factory, init_db
-from api.form import router as form_router
-from api.unis import router as unis_router
-from api.categories import router as categories_router
-from api.skills import router as skills_router
+from src.config import Settings
+from src.db.core import make_engine, make_session_factory, init_db
+from src.api.form import router as form_router
+from src.api.unis import router as unis_router
+from src.api.categories import router as categories_router
+from src.api.skills import router as skills_router
 
 from fastapi.exceptions import RequestValidationError
-from logging_singleton import get_logger
-from exceptions import CUSTOM_ERROR_MESSAGES
+from src.logging_singleton import get_logger
+from src.exceptions import CUSTOM_ERROR_MESSAGES
+
+load_dotenv()
 
 logger = get_logger(__name__)
 

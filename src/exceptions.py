@@ -1,19 +1,7 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-from dotenv import load_dotenv
 
-from config import Settings
-from db.core import make_engine, make_session_factory, init_db
 from logging_singleton import get_logger
 
 # Import your routers here
-from api.form import router as form_router
-from api.unis import router as unis_router
-from api.categories import router as categories_router
-from api.skills import router as skills_router
 
 logger = get_logger(__name__)
 

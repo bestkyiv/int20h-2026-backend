@@ -1,8 +1,8 @@
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, Depends
-from db.core import get_session
-from db.models import University
+from src.db.core import get_session
+from src.db.models import University
 
 router = APIRouter()
 

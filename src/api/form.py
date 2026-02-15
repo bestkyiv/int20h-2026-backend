@@ -1,15 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from domain.models import Form, ParticipationFormat
 
 from sqlmodel import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.core import get_session
-from db.models import Participant, Team, University, Category
+from src.domain.models import Form
+from src.db.core import get_session
+from src.db.models import Participant, Team, University, Category
 
-from logging_singleton import get_logger
+from src.logging_singleton import get_logger
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -100,25 +100,14 @@ async def submit_form(form: Form, session: AsyncSession = Depends(get_session)):
                 status_code=400, detail="Ви повинні вказати назву команди"
             )
 
-        # Check existing team
-        stmt_team = select(Team).where(Team.team_name == team_name)
+        # Check existing team (in same category)
+        stmt_team = select(Team).where(
+            (Team.team_name == team_name) & (Team.category_id == form.category_id)
+        )
         result_team = await session.execute(stmt_team)
         existing_team = result_team.scalars().first()
 
         if existing_team:
-            if existing_team.category_id != form.category_id:
-                logger.warning(
-                    "Registration failed: team name exists in other category. team_name=%s existing_category=%s requested_category=%s email=%s",
-                    team_name,
-                    existing_team.category_id,
-                    form.category_id,
-                    form.email,
-                )
-                raise HTTPException(
-                    status_code=400,
-                    detail="Присутня команда з такою назвою в іншій категорії. Пересвідчіться, що ви правильно вказали назву команди. Якщо Ви переконані, що хочете створити команду, то це має зробити тімлід",
-                )
-
             # Join existing
             participant.team_id = existing_team.id
             participant.team_leader = False  # Force false if joining

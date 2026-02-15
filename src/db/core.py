@@ -7,7 +7,6 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from . import models
 
 
 def make_engine(db_url: str) -> AsyncEngine:

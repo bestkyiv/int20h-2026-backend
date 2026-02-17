@@ -1,6 +1,7 @@
 """Test data builders for creating test fixtures with fluent API."""
 
 from typing import Optional
+from src.db.models import Participant, ParticipationFormat
 
 
 class FormBuilder:
@@ -158,6 +159,90 @@ class FormBuilder:
     def with_field(self, field_name: str, value) -> "FormBuilder":
         """Set arbitrary field (for testing invalid values)."""
         self._data[field_name] = value
+        return self
+
+    def build(self) -> dict:
+        """Return the constructed form data as dictionary."""
+        return self._data.copy()
+
+
+class ParticipantBuilder:
+    """Fluent builder for creating Participant test data.
+
+    Provides a clean interface for constructing Participant instances with
+    various configurations for testing database interactions and business logic.
+
+    Example:
+        >>> participant = (ParticipantBuilder()
+        ...     .with_full_name("Test User")
+        ...     .with_email("test@example.com")
+        ...     .with_telegram("@testuser")
+        ...     .with_category(1)
+        ...     .with_team(2)
+        ...     .build()
+        ... )
+    """
+
+    def __init__(self):
+        """Initialize builder with minimal valid defaults."""
+        self._data = {
+            "full_name": "Test User",
+            "email": "test@example.com",
+            "telegram": "@testuser",
+            "phone": "+380501234567",
+            "is_student": False,
+            "study_year": None,
+            "university_id": None,
+            "category_id": 1,
+            "team_id": None,
+            "team_leader": False,
+            "wants_job": False,
+            "job_description": "",
+            "participation_format": ParticipationFormat.ONLINE,
+            "work_consent": False,
+            "source": "test",
+            "comment": None,
+            "personal_data_consent": True,
+        }
+
+    def with_full_name(self, full_name: str) -> "ParticipantBuilder":
+        """Set full name."""
+        self._data["full_name"] = full_name
+        return self
+
+    def with_email(self, email: str) -> "ParticipantBuilder":
+        """Set email address."""
+        self._data["email"] = email
+        return self
+
+    def with_telegram(self, telegram: str) -> "ParticipantBuilder":
+        """Set telegram handle."""
+        self._data["telegram"] = telegram
+        return self
+
+    def with_phone(self, phone: str) -> "ParticipantBuilder":
+        """Set phone number."""
+        self._data["phone"] = phone
+        return self
+
+    def as_student(self, university_id: int, study_year: int) -> "ParticipantBuilder":
+        """Configure as student with university and study year."""
+        self._data["is_student"] = True
+        self._data["university_id"] = university_id
+        self._data["study_year"] = study_year
+        return self
+
+    def with_team(
+        self, team_name: str, is_leader: bool = False
+    ) -> "ParticipantBuilder":
+        """Configure team participation."""
+        self._data["team_name"] = team_name
+        self._data["team_leader"] = is_leader
+        return self
+
+    def with_category(self, category_id: int) -> "ParticipantBuilder":
+        """Set category ID."""
+        self._data["category_id"] = category_id
         return self
 
     def build(self) -> dict:

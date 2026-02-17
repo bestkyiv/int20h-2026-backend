@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from src.db.models import Team, Participant
-from tests.builders import FormBuilder
+from tests.builders import FormBuilder, ParticipantBuilder
 
 
 # ========================================
@@ -76,6 +76,46 @@ async def test_join_existing_team(
     assert participant is not None
     assert participant.team_id == team.id
     assert participant.team_leader is False
+
+
+@pytest.mark.asyncio
+async def test_join_full_team_rejected(
+    client: AsyncClient, session: AsyncSession, category_factory, team_factory
+):
+    """Joining a full team should be rejected."""
+    category = await category_factory()
+    _team = await team_factory(team_name="FullTeam", category_id=category.id)
+
+    # Simulate 4 members already in the team
+    for i in range(4):
+        participant = (
+            ParticipantBuilder()
+            .with_full_name(f"Member {i+1}")
+            .with_email(f"member{i+1}@example.com")
+            .with_telegram(f"@member{i+1}")
+            .with_category(category.id)
+            .with_team("FullTeam", is_leader=False)
+            .build()
+        )
+        # Builder returns a dict; convert to ORM model and set team_id
+        participant["team_id"] = _team.id
+        participant.pop("team_name", None)
+        session.add(Participant(**participant))
+    await session.commit()
+
+    # Try to join the full team
+    payload = (
+        FormBuilder()
+        .with_email("new_member@example.com")
+        .with_telegram("@new_member")
+        .with_category(category.id)
+        .with_team("FullTeam", is_leader=False)
+        .build()
+    )
+
+    response = await client.post("/form/", json=payload)
+    assert response.status_code == 400
+    assert "команда вже повна" in response.json()["detail"].lower()
 
 
 @pytest.mark.asyncio

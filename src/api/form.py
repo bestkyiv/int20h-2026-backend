@@ -9,6 +9,7 @@ from src.domain.models import Form
 from src.db.core import get_session
 from src.db.models import Participant, Team, University, Category
 
+from sqlalchemy import func
 from src.logging_singleton import get_logger
 
 router = APIRouter()
@@ -108,6 +109,21 @@ async def submit_form(form: Form, session: AsyncSession = Depends(get_session)):
         existing_team = result_team.scalars().first()
 
         if existing_team:
+            # Check if team is full (assuming max 4 members)
+            stmt_count = select(func.count(Participant.id)).where(
+                Participant.team_id == existing_team.id
+            )
+            result_count = await session.execute(stmt_count)
+            member_count = result_count.scalar()
+
+            if member_count >= 4:
+                logger.warning(
+                    "Registration failed: team is full. team_name=%s email=%s",
+                    team_name,
+                    form.email,
+                )
+                raise HTTPException(status_code=400, detail="Команда вже повна")
+
             # Join existing
             participant.team_id = existing_team.id
             participant.team_leader = False  # Force false if joining

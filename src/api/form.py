@@ -110,11 +110,13 @@ async def submit_form(form: Form, session: AsyncSession = Depends(get_session)):
 
         if existing_team:
             # Check if team is full (assuming max 4 members)
-            stmt_count = select(func.count(Participant.id)).where(
+            stmt_count = select(func.count(Participant.id)).where(  # type: ignore
                 Participant.team_id == existing_team.id
             )
             result_count = await session.execute(stmt_count)
             member_count = result_count.scalar()
+            if member_count is None:
+                member_count = 0
 
             if member_count >= 4:
                 logger.warning(

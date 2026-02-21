@@ -1,7 +1,7 @@
 """Test data builders for creating test fixtures with fluent API."""
 
 from typing import Optional
-from src.db.models import Participant, ParticipationFormat
+from src.db.models import ParticipationFormat
 
 
 class FormBuilder:

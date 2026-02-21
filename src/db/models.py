@@ -80,6 +80,15 @@ class Team(SQLModel, table=True):
 
     members: List["Participant"] = Relationship(back_populates="team")
 
+    created_at: datetime = Field(
+        default_factory=utc_now, sa_column=Column(DateTime(timezone=True))
+    )
+
+    updated_at: datetime = Field(
+        default_factory=utc_now,
+        sa_column=Column(DateTime(timezone=True), onupdate=utc_now),
+    )
+
 
 class Category(SQLModel, table=True):
     __tablename__ = "categories"  # type: ignore
@@ -150,3 +159,14 @@ class Participant(SQLModel, table=True):
     # Skills
     skills_text: Optional[str] = None
     skills_embedding: List[float] = Field(default=None, sa_column=Column(Vector(768)))
+
+    created_at: datetime = Field(
+        default_factory=utc_now, sa_column=Column(DateTime(timezone=True))
+    )
+
+    updated_at: datetime = Field(
+        default_factory=utc_now,
+        sa_column=Column(DateTime(timezone=True), onupdate=utc_now),
+    )
+
+    is_telegram_group_member: bool = Field(default=False)

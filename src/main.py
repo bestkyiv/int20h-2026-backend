@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.config import Settings
+from src.middleware import RegistrationDeadlineMiddleware
 from src.db.core import make_engine, make_session_factory, init_db
 from src.api.form import router as form_router
 from src.api.unis import router as unis_router
@@ -61,6 +62,7 @@ origins = [
     if origin.strip()
 ]
 
+app.add_middleware(RegistrationDeadlineMiddleware, settings=settings)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,

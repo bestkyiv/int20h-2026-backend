@@ -170,3 +170,4 @@ class Participant(SQLModel, table=True):
     )
 
     is_telegram_group_member: bool = Field(default=False)
+    is_withdraw: bool = Field(default=False)

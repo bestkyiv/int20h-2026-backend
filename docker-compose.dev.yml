@@ -85,6 +85,8 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - BACKEND_HOST=${BACKEND_HOST:-0.0.0.0}
       - BACKEND_PORT=${BACKEND_PORT:-8000}
+      - REMAINING_TIME=${REMAINING_TIME}
+      - IS_RUNNING=${IS_RUNNING}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     networks:

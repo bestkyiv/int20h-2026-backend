@@ -12,6 +12,7 @@ from src.api.form import router as form_router
 from src.api.unis import router as unis_router
 from src.api.categories import router as categories_router
 from src.api.skills import router as skills_router
+from src.api.timer import router as timer_router
 
 from fastapi.exceptions import RequestValidationError
 from src.logging_singleton import get_logger
@@ -116,6 +117,7 @@ app.include_router(form_router)
 app.include_router(unis_router)
 app.include_router(categories_router)
 app.include_router(skills_router)
+app.include_router(timer_router)
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

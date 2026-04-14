@@ -8,6 +8,7 @@ from sqlalchemy import (
     Index,
     DateTime,
     BigInteger,
+    Text,
     UniqueConstraint,
     JSON,
     Enum as SAEnum,
@@ -98,6 +99,8 @@ class Team(SQLModel, table=True):
     category: Optional["Category"] = Relationship(back_populates="teams")
 
     members: List["Participant"] = Relationship(back_populates="team")
+
+    final_location: Optional[str] = Field(default=None)
 
     created_at: datetime = Field(
         default_factory=utc_now, sa_column=Column(DateTime(timezone=True))
@@ -253,6 +256,37 @@ class Participant(SQLModel, table=True):
     misc_reason_not_invited: Optional[str] = None
 
 
+class CategoryMentorshipConfig(SQLModel, table=True):
+    """Per-category mentorship configuration stored in the database.
+
+    Simple scalars are real columns (easy SQL UPDATE).
+    Nested/complex structures are JSON TEXT columns.
+    """
+
+    __tablename__ = "category_mentorship_configs"  # type: ignore
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    category_id: int = Field(foreign_key="categories.id", unique=True)
+    group_chat_id: int = Field(sa_column=Column(BigInteger, nullable=False))
+    session_duration: int  # minutes per session
+    session_gap: int  # minutes gap between sessions
+    min_session_count: int = 0  # legacy, kept for backward compat
+    max_session_count: int = 0  # legacy, kept for backward compat
+    assignment_type: str = "whatever"  # legacy, kept for backward compat
+    schedule_json: str = Field(
+        sa_column=Column(Text, nullable=False)
+    )  # JSON list of {"start": "HH:MM", "end": "HH:MM"}
+    whatever_config_json: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )  # legacy, kept for backward compat
+    strict_config_json: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )  # legacy, kept for backward compat
+    helper_group_chat_id: Optional[int] = Field(
+        default=None, sa_column=Column(BigInteger, nullable=True)
+    )
+
+
 class Mentor(SQLModel, table=True):
     """A mentor available for mentorship sessions in a specific category."""
 
@@ -265,6 +299,7 @@ class Mentor(SQLModel, table=True):
     category_id: int = Field(foreign_key="categories.id")
     participation_format: str = Field(default="offline")  # "online" | "offline"
     mentor_group: Optional[str] = Field(default=None)  # maps to a group in YAML config
+    default_meeting_link: Optional[str] = Field(default=None)
 
 
 class MentorshipSession(SQLModel, table=True):
@@ -278,9 +313,163 @@ class MentorshipSession(SQLModel, table=True):
     team_id: int = Field(foreign_key="teams.id")
     slot_start: datetime = Field(sa_column=Column(DateTime(timezone=True)))
     slot_end: datetime = Field(sa_column=Column(DateTime(timezone=True)))
+    meeting_link: Optional[str] = Field(default=None)
+    reminder_sent: bool = Field(default=False)
     created_at: datetime = Field(
         default_factory=utc_now, sa_column=Column(DateTime(timezone=True))
     )
     updated_at: datetime = Field(
+        default_factory=utc_now, sa_column=Column(DateTime(timezone=True))
+    )
+
+
+class ActivatedGroup(SQLModel, table=True):
+    """Tracks which Telegram group chat is activated for which team."""
+
+    __tablename__ = "activated_groups"  # type: ignore
+    __table_args__ = {"extend_existing": True}
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="teams.id", unique=True)
+    chat_id: int = Field(sa_column=Column(BigInteger, unique=True, nullable=False))
+    activated_by: int = Field(sa_column=Column(BigInteger, nullable=False))
+    activated_at: datetime = Field(
+        default_factory=utc_now, sa_column=Column(DateTime(timezone=True))
+    )
+
+
+class GroupTopic(SQLModel, table=True):
+    """Maps a team to a forum topic in the mentor supergroup."""
+
+    __tablename__ = "group_topics"  # type: ignore
+    __table_args__ = (
+        UniqueConstraint("mentor_group_chat_id", "team_id"),
+        {"extend_existing": True},
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="teams.id")
+    mentor_group_chat_id: int = Field(sa_column=Column(BigInteger, nullable=False))
+    thread_id: int = Field()  # forum topic message_thread_id
+    topic_name: str = Field()
+    created_at: datetime = Field(
+        default_factory=utc_now, sa_column=Column(DateTime(timezone=True))
+    )
+
+
+class ForwardedMessage(SQLModel, table=True):
+    """Tracks message pairs for cross-group edit/delete sync."""
+
+    __tablename__ = "forwarded_messages"  # type: ignore
+    __table_args__ = (
+        Index("ix_fwd_source", "source_chat_id", "source_message_id"),
+        Index("ix_fwd_target", "target_chat_id", "target_message_id"),
+        {"extend_existing": True},
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    source_chat_id: int = Field(sa_column=Column(BigInteger, nullable=False))
+    source_message_id: int = Field()
+    target_chat_id: int = Field(sa_column=Column(BigInteger, nullable=False))
+    target_message_id: int = Field()
+    direction: str = Field()  # "ask", "reply", "send"
+    created_at: datetime = Field(
+        default_factory=utc_now, sa_column=Column(DateTime(timezone=True))
+    )
+
+
+class Helper(SQLModel, table=True):
+    """A helper available to support mentorship sessions."""
+
+    __tablename__ = "helpers"  # type: ignore
+    __table_args__ = {"extend_existing": True}
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    telegram_user_id: int = Field(
+        sa_column=Column(BigInteger, unique=True, nullable=False)
+    )
+    telegram_handle: Optional[str] = Field(default=None, index=True, unique=True)
+    display_name: str
+    default_meeting_link: Optional[str] = Field(default=None)
+    active: bool = Field(default=True)
+    created_at: datetime = Field(
+        default_factory=utc_now, sa_column=Column(DateTime(timezone=True))
+    )
+
+
+class HelperAvailabilitySlot(SQLModel, table=True):
+    """Helper availability represented in slot granularity."""
+
+    __tablename__ = "helper_availability_slots"  # type: ignore
+    __table_args__ = (
+        UniqueConstraint("helper_id", "slot_start", "slot_end"),
+        {"extend_existing": True},
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    helper_id: int = Field(foreign_key="helpers.id")
+    category_id: Optional[int] = Field(default=None, foreign_key="categories.id")
+    slot_start: datetime = Field(sa_column=Column(DateTime(timezone=True)))
+    slot_end: datetime = Field(sa_column=Column(DateTime(timezone=True)))
+    created_at: datetime = Field(
+        default_factory=utc_now, sa_column=Column(DateTime(timezone=True))
+    )
+
+
+class SessionHelperAssignment(SQLModel, table=True):
+    """Assignment of a helper to a mentorship session."""
+
+    __tablename__ = "session_helper_assignments"  # type: ignore
+    __table_args__ = (
+        UniqueConstraint("session_id"),
+        {"extend_existing": True},
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    session_id: int = Field(foreign_key="mentorship_sessions.id")
+    helper_id: int = Field(foreign_key="helpers.id")
+    status: str = Field(default="assigned")  # assigned | swapped | released
+    assigned_by: Optional[int] = Field(
+        default=None, sa_column=Column(BigInteger, nullable=True)
+    )
+    assigned_at: datetime = Field(
+        default_factory=utc_now, sa_column=Column(DateTime(timezone=True))
+    )
+    updated_at: datetime = Field(
+        default_factory=utc_now, sa_column=Column(DateTime(timezone=True))
+    )
+
+
+class MentorAvailabilitySlot(SQLModel, table=True):
+    """One mentor-level long availability interval for the mentorship day."""
+
+    __tablename__ = "mentor_availability_slots"  # type: ignore
+    __table_args__ = (
+        UniqueConstraint("mentor_id"),
+        {"extend_existing": True},
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    mentor_id: int = Field(foreign_key="mentors.id")
+    slot_start: datetime = Field(sa_column=Column(DateTime(timezone=True)))
+    slot_end: datetime = Field(sa_column=Column(DateTime(timezone=True)))
+    created_at: datetime = Field(
+        default_factory=utc_now, sa_column=Column(DateTime(timezone=True))
+    )
+
+
+class MentorHelperLink(SQLModel, table=True):
+    """Many-to-many mapping of mentors to supporting helpers."""
+
+    __tablename__ = "mentor_helper_links"  # type: ignore
+    __table_args__ = (
+        UniqueConstraint("mentor_id", "helper_id"),
+        {"extend_existing": True},
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    mentor_id: int = Field(foreign_key="mentors.id")
+    helper_id: int = Field(foreign_key="helpers.id")
+    created_at: datetime = Field(
         default_factory=utc_now, sa_column=Column(DateTime(timezone=True))
     )

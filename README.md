@@ -2,7 +2,7 @@ INT20H 2026 — Backend service
 
 Overview
 
-This repository implements a small FastAPI backend for the INT20H 2026 event registration form and reference APIs (skills, categories, universities). It exposes a few read endpoints and a single submission endpoint that validates and stores participant data in the database.
+This repository implements a FastAPI backend for the INT20H 2026 event: registration form submission and reference APIs (skills, categories, universities). It exposes read endpoints and a single submission endpoint that validates and stores participant data in the database.
 
 Key features
 
@@ -11,105 +11,276 @@ Key features
 - Persistent storage using async SQLModel models (`src/db/models.py`)
 - Lightweight endpoints for frontend consumption and server-side validation
 
-Quick start
+---
 
 Requirements
 
 - Python 3.13+
-- Install dependencies: pip install -r requirements.txt
+- [`uv`](https://docs.astral.sh/uv/) (recommended) **or** `pip`
+- PostgreSQL 17 with the `pgvector` extension (production) — SQLite is used by default for local development and tests
 
-Run the app locally
+---
 
-- Using Uvicorn:
+Installation
+
+**Using uv (recommended)**
+
+```bash
+uv sync
+```
+
+**Using pip**
+
+```bash
+pip install -r requirements.txt
+```
+
+For development tooling (linting, type checking, test extras):
+
+```bash
+# uv
+uv sync --dev
+
+# pip
+pip install -e ".[dev]"
+```
+
+---
+
+Configuration
+
+Copy the example environment file and fill in the values:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATABASE_URL` | `sqlite+aiosqlite:///./backend.db` | SQLAlchemy async connection string |
+| `ALLOWED_ORIGINS` | `http://localhost:4321` | Comma-separated list of allowed CORS origins |
+| `ENVIRONMENT` | `development` | `development` or `production` |
+| `REGISTRATION_END_DATE` | `2026-02-22T23:59:59+02:00` | ISO-8601 datetime after which submissions are rejected |
+
+**PostgreSQL connection string format** (for production or local Postgres):
+
+```
+DATABASE_URL=postgresql+asyncpg://<user>:<password>@<host>:<port>/<dbname>
+```
+
+**Additional variables required by Docker Compose** (add to `.env`):
+
+```
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=yourpassword
+POSTGRES_DB=postgres
+POSTGRES_PORT=5432
+```
+
+---
+
+Local development (SQLite, no Docker)
+
+SQLite is the default — no database setup is needed.
+
+1. Install dependencies (see above).
+
+2. Run database migrations:
+
+```bash
+alembic upgrade head
+```
+
+3. Seed reference data (categories, universities, skills):
+
+```bash
+python scripts/seed.py
+```
+
+4. Start the dev server:
 
 ```bash
 uvicorn src.main:app --reload
 ```
 
-- Default HTTP port: 8000
+The API is available at `http://localhost:8000`. Interactive docs at `http://localhost:8000/docs`.
 
-API endpoints (summary)
+---
 
-1. GET /skills/
+Local development with PostgreSQL (Docker Compose)
 
-- Purpose: return static list of skill names (served from `scripts/skills.json`).
-- Response: JSON array of strings.
-- Example: ["Python", "FastAPI", ...]
+The `docker-compose.dev.yml` file starts a PostgreSQL 17 + pgvector instance, runs Alembic migrations, and seeds the database automatically.
 
-2. GET /categories/
+```bash
+# Start the database, run migrations, and seed data
+docker compose -f docker-compose.dev.yml up -d
 
-- Purpose: list available competition categories.
-- Response: { "categories": [ {"id": 1, "name": "..."}, ... ] }
-- Source: `src/db/models.py::Category`
+# Then start the backend locally
+uvicorn src.main:app --reload
+```
 
-3. GET /unis/
+Services in `docker-compose.dev.yml`:
 
-- Purpose: list supported universities.
-- Response: { "universities": [ {"id": 1, "name": "...", "city": "..."}, ... ] }
-- Source: `src/db/models.py::University`
+| Service | Description |
+|---|---|
+| `db` | PostgreSQL 17 with pgvector, persists data in a named volume |
+| `migrator` | Runs `alembic upgrade head` once after `db` is healthy |
+| `seeder` | Runs `docker/seed/seed.sql` once after migrations complete |
 
-4. POST /form/
+---
 
-- Purpose: submit registration form for a participant.
-- Request body: `src/domain/models.py::Form` (Pydantic model). Important fields:
-  - full_name (str)
-  - email (str)
-  - telegram (str)
-  - phone (E.164 format validated)
-  - is_student (bool)
-  - university_id (int | null)
-  - study_year (enum)
-  - category_id (int)
-  - skills (list[str])
-  - format ("online" | "offline")
-  - has_team (bool), team_leader (bool), team_name (str)
-  - wants_job (bool), cv (url), linkedin (url), work_consent (bool)
-  - personal_data_consent (must be true)
+Database migrations (Alembic)
 
-- Behavior / business rules (high-level):
-  - Validates field-level and cross-field constraints (see `Form.model_validator`).
-  - Rejects duplicate registrations (same email or telegram).
-  - Validates `university_id` and `category_id` existence.
-  - If `has_team` and `team_leader` true → creates team + assigns participant as leader.
-  - If `has_team` and team exists → participant joins existing team (category must match).
+```bash
+# Apply all pending migrations
+alembic upgrade head
 
-- Success response: 200 with {"message": "...", "data": <submitted payload>}
-- Error responses: 400 for business/validation errors, 422 for Pydantic validation errors.
+# Create a new migration (autogenerate from model changes)
+alembic revision --autogenerate -m "short description"
 
-Database models (brief)
+# Downgrade one step
+alembic downgrade -1
+```
 
-- Participant — stores submitted registrations (personal, university, category, team link, CV/linkedin, skills_text).
-- Team — team_name + category_id; unique constraint on (team_name, category_id).
-- Category — competition categories (id, name).
-- University — universities (id, name, city).
+Migration scripts live in `alembic/versions/`.
+
+---
 
 Project layout
 
-- src/
-  - main.py — FastAPI app and startup/lifespan
-  - api/ — HTTP routers (`form.py`, `skills.py`, `categories.py`, `unis.py`)
-  - db/ — SQLModel DB models + core session helpers
-  - domain/ — Pydantic request/validation models
-  - logging_singleton.py, config.py, exceptions.py — infra
-- scripts/ — supporting files (e.g. `skills.json`)
+```
+src/
+  main.py               — FastAPI app, middleware wiring, lifespan
+  config.py             — Pydantic Settings (reads .env)
+  api/                  — HTTP routers
+    form.py             — POST /form/  (registration workflow)
+    skills.py           — GET  /skills/
+    categories.py       — GET  /categories/
+    unis.py             — GET  /unis/
+  db/
+    core.py             — Engine / session factory helpers
+    models.py           — SQLModel ORM models (Participant, Team, Category, University)
+  domain/
+    models.py           — Pydantic request/validation models (Form, cross-field validators)
+  exceptions.py         — Custom exception types and error message overrides
+  logging_singleton.py  — Shared logger instance
+  middleware.py         — RegistrationDeadlineMiddleware
+
+alembic/                — Alembic env and migration scripts
+scripts/                — Seed and utility scripts
+  seed.py               — Seeds categories, universities, and skills
+  skills.json           — Static skill list served by GET /skills/
+  unis.json             — University data used during seeding
+docker/
+  seed/seed.sql         — SQL seed file used by the Docker seeder service
+tests/
+  unit/                 — Fast isolated tests (no DB)
+  api/                  — HTTP-level tests (override DB dependency with in-memory SQLite)
+  integration/          — Full integration tests
+```
+
+---
+
+API endpoints
+
+### GET /skills/
+
+Returns the static list of skill names from `scripts/skills.json`.
+
+```json
+["Python", "FastAPI", "React", ...]
+```
+
+### GET /categories/
+
+```json
+{ "categories": [{"id": 1, "name": "..."}, ...] }
+```
+
+### GET /unis/
+
+```json
+{ "universities": [{"id": 1, "name": "...", "city": "..."}, ...] }
+```
+
+### POST /form/
+
+Submits a participant registration. Key request fields:
+
+| Field | Type | Notes |
+|---|---|---|
+| `full_name` | `str` | |
+| `email` | `str` | Unique — duplicate rejected with 400 |
+| `telegram` | `str` | Unique — duplicate rejected with 400 |
+| `phone` | `str` | E.164 format |
+| `is_student` | `bool` | |
+| `university_id` | `int \| null` | Must exist in the DB |
+| `study_year` | enum | |
+| `category_id` | `int` | Must exist in the DB |
+| `skills` | `list[str]` | |
+| `format` | `"online" \| "offline"` | |
+| `has_team` | `bool` | |
+| `team_leader` | `bool` | |
+| `team_name` | `str` | |
+| `wants_job` | `bool` | |
+| `cv` | URL | |
+| `linkedin` | URL | |
+| `work_consent` | `bool` | |
+| `personal_data_consent` | `bool` | Must be `true` |
+
+Business rules (see `src/domain/models.py` and `src/api/form.py` for full detail):
+
+- Cross-field constraints validated via `model_validator`.
+- Duplicate email or telegram → 400.
+- `has_team=true` + `team_leader=true` → creates a new team and assigns the participant as leader.
+- `has_team=true`, team already exists → participant joins it (category must match).
+
+**Success:** `200 {"message": "...", "data": <submitted payload>}`  
+**Validation error:** `422 {"detail": "<message>"}`  
+**Business error:** `400 {"detail": "<message>"}`
+
+---
 
 Testing
 
-- Tests are located in `tests/` (pytest + pytest-asyncio).
-- Run all tests:
-
 ```bash
+# Run all tests
 pytest -q
+
+# Run only fast unit tests
+pytest -q -m unit
+
+# Run with coverage report
+pytest --cov=src --cov-report=html
 ```
 
-- The test suite uses an in-memory SQLite DB and overrides the DB dependency for API tests.
+Tests use an in-memory SQLite database and override the DB dependency — no external services required.
 
-Adding endpoints / Contributing
+Available markers: `unit`, `integration`, `slow`, `db`, `api`.
 
-- Add new API endpoints under `src/api/` and write input validation in `src/domain/`.
-- Add DB tables under `src/db/models.py` and create Alembic migrations if necessary.
-- Add unit tests under `tests/unit/` and API/integration tests under `tests/api/` or `tests/integration/`.
+---
 
-Contact
+Linting and formatting
 
-- For design/behaviour questions, inspect `src/domain/models.py` (validation) and `src/api/form.py` (registration workflow).
+```bash
+# Check
+ruff check .
+
+# Fix auto-fixable issues
+ruff check --fix .
+
+# Format
+ruff format .
+```
+
+---
+
+Production (Docker)
+
+```bash
+# Build and run
+docker build -t int-backend .
+docker run --env-file .env -p 8000:8000 int-backend
+```
+
+The container entrypoint (`start.sh`) runs migrations, seeds the database, then starts Uvicorn.
